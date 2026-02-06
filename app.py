@@ -1,3 +1,4 @@
+from unittest import result
 import streamlit as st
 from ultralytics import YOLO
 import cv2
@@ -57,39 +58,48 @@ mode = st.radio(
 # =============================
 # FUNCTION TO DISPLAY RESULTS SIDE-BY-SIDE WITH TABLE
 # =============================
-def display_side_by_side_table(original_image, results):
+def display_side_by_side_table(original_image, results, uid):
     # Annotated image
     res_plotted = results[0].plot()
     res_rgb = cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB)
 
-    # Columns for side-by-side
     col1, col2 = st.columns(2)
+
     with col1:
         st.markdown("<div class='card'><b>Original Image</b></div>", unsafe_allow_html=True)
         st.image(original_image, use_container_width=True)
+
     with col2:
         st.markdown("<div class='card'><b>Detection Result</b></div>", unsafe_allow_html=True)
         st.image(res_rgb, use_container_width=True)
-        # Download
+
         _, output_path = tempfile.mkstemp(suffix=".jpg")
         cv2.imwrite(output_path, cv2.cvtColor(res_rgb, cv2.COLOR_RGB2BGR))
-        with open(output_path, "rb") as file:
-            st.download_button("💾 Download Result", file, file_name="detected_image.jpg")
 
-    # Detected objects
+        with open(output_path, "rb") as file:
+            st.download_button(
+                label="💾 Download Result",
+                data=file,
+                file_name="detected_image.jpg",
+                key=f"download_result_{uid}"
+            )
+
+    # Detected objects table
     if len(results[0].boxes) > 0:
         detected_classes = [model.names[int(c)] for c in results[0].boxes.cls.cpu().numpy()]
         boxes = results[0].boxes.xyxy.cpu().numpy()
-        # Table
+
         df = pd.DataFrame({
             "Class": detected_classes,
-            "x1": boxes[:,0].astype(int),
-            "y1": boxes[:,1].astype(int),
-            "x2": boxes[:,2].astype(int),
-            "y2": boxes[:,3].astype(int)
+            "x1": boxes[:, 0].astype(int),
+            "y1": boxes[:, 1].astype(int),
+            "x2": boxes[:, 2].astype(int),
+            "y2": boxes[:, 3].astype(int)
         })
+
         df_count = df["Class"].value_counts().reset_index()
         df_count.columns = ["Class", "Count"]
+
         st.markdown("<div class='card'><b>Detected Objects Summary</b></div>", unsafe_allow_html=True)
         st.table(df_count)
     else:
@@ -109,7 +119,7 @@ if mode == "📸 Single Image":
         with st.spinner("Detecting objects..."):
             results = model.predict(source=tfile_path, conf=0.25)
 
-        display_side_by_side_table(original_image, results)
+        display_side_by_side_table(original_image, results, uid="single")
         try:
             os.remove(tfile_path)
         except:
@@ -123,7 +133,7 @@ elif mode == "📂 Multiple Images":
     if uploaded_files:
         st.info(f"{len(uploaded_files)} image(s) uploaded. Click below to start batch detection.")
         if st.button("🚀 Run Detection on All Images"):
-            for uploaded_file in uploaded_files:
+            for idx, uploaded_file in enumerate(uploaded_files):
                 tfile_path = os.path.join(tempfile.gettempdir(), uploaded_file.name)
                 with open(tfile_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
@@ -133,7 +143,7 @@ elif mode == "📂 Multiple Images":
                     results = model.predict(source=tfile_path, conf=0.25)
 
                 st.subheader(f"Result - {uploaded_file.name}")
-                display_side_by_side_table(original_image, results)
+                display_side_by_side_table(original_image, results, uid=idx)
 
                 try:
                     os.remove(tfile_path)
